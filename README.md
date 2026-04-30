@@ -147,6 +147,26 @@ node bot.js
 
 ---
 
+## Terminal Dashboard
+
+A Matrix-style live dashboard for viewing every decision the bot has made — executed trades, blocked trades, and the exact conditions that passed or failed.
+
+```bash
+npm run dashboard
+```
+
+Then open [http://localhost:3737](http://localhost:3737).
+
+What you get:
+- **Stats strip** — total decisions, trades taken, blocked, today's count vs daily cap, total volume, estimated fees
+- **Executed Trades** — every order that went through (paper or live), with timestamp, price, size, mode, order ID
+- **Decision Feed** — every safety-check run, color-coded PASS / BLOCK, filterable
+- **Decision Detail** — click any row to inspect every condition (✓ pass / ✗ fail), the indicator values at decision time, and the trade size/limits
+
+Zero dependencies, reads `safety-check-log.json` and `trades.csv` directly. Auto-refreshes every 5 seconds.
+
+---
+
 ## Deploy to Railway (Run in the Cloud 24/7)
 
 The local setup runs when your laptop is open. Railway lets the bot check for setups around the clock — even while you sleep.

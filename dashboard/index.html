@@ -1,0 +1,708 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>CLAUDE EXECUTE :: TERMINAL</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #000;
+  --bg-panel: #050805;
+  --bg-row: #070b07;
+  --green: #00ff66;
+  --green-dim: #00aa44;
+  --green-faint: #035c1f;
+  --green-glow: rgba(0,255,102,0.45);
+  --amber: #ffb700;
+  --red: #ff3355;
+  --grey: #4a5a4a;
+  --grid: rgba(0,255,102,0.08);
+  --mono: 'JetBrains Mono', 'Share Tech Mono', ui-monospace, Menlo, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0; padding: 0;
+  background: var(--bg);
+  color: var(--green);
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.4;
+  height: 100%;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  position: relative;
+  text-shadow: 0 0 6px var(--green-glow);
+}
+
+#rain {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  opacity: 0.08;
+  pointer-events: none;
+}
+
+#scanlines {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    180deg,
+    rgba(0,255,102,0.03) 0px,
+    rgba(0,255,102,0.03) 1px,
+    transparent 2px,
+    transparent 4px
+  );
+  mix-blend-mode: screen;
+}
+
+.app {
+  position: relative;
+  z-index: 2;
+  height: 100vh;
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  gap: 1px;
+  background: var(--green-faint);
+}
+
+/* ─── Top bar ─── */
+header {
+  background: var(--bg);
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  padding: 8px 14px;
+  gap: 24px;
+}
+.brand {
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  font-size: 14px;
+  color: var(--green);
+}
+.brand .sep { color: var(--green-dim); margin: 0 8px; }
+.brand .sub { color: var(--green-dim); font-weight: 400; letter-spacing: 0.12em; }
+
+.ticker {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  justify-content: center;
+  color: var(--green-dim);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+.ticker b { color: var(--green); font-weight: 500; }
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+}
+.dot {
+  display: inline-block;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green-glow);
+  animation: blink 1.4s steps(2,end) infinite;
+  margin-right: 6px;
+}
+.dot.amber { background: var(--amber); box-shadow: 0 0 8px rgba(255,183,0,0.6); }
+@keyframes blink { 50% { opacity: 0.25; } }
+
+/* ─── Stats strip ─── */
+.stats {
+  background: var(--bg);
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 1px;
+  background: var(--green-faint);
+}
+.stat {
+  background: var(--bg-panel);
+  padding: 12px 14px;
+}
+.stat .label {
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  color: var(--green-dim);
+  text-transform: uppercase;
+}
+.stat .val {
+  font-size: 22px;
+  font-weight: 700;
+  margin-top: 4px;
+  color: var(--green);
+  letter-spacing: 0.04em;
+}
+.stat .val.red { color: var(--red); text-shadow: 0 0 8px rgba(255,51,85,0.5); }
+.stat .val.amber { color: var(--amber); text-shadow: 0 0 8px rgba(255,183,0,0.5); }
+.stat .sub {
+  font-size: 10px;
+  color: var(--green-dim);
+  margin-top: 2px;
+  letter-spacing: 0.1em;
+}
+
+/* ─── Main grid ─── */
+main {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 1px;
+  overflow: hidden;
+  background: var(--green-faint);
+  min-height: 0;
+}
+.panel {
+  background: var(--bg-panel);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--green-faint);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  color: var(--green-dim);
+  text-transform: uppercase;
+  background: rgba(0,255,102,0.02);
+}
+.panel-head .h { color: var(--green); font-weight: 700; }
+.panel-head .pill {
+  border: 1px solid var(--green-faint);
+  padding: 2px 6px;
+  font-size: 10px;
+  color: var(--green-dim);
+}
+
+.panel-body {
+  flex: 1;
+  overflow: auto;
+  font-size: 12px;
+}
+
+/* ─── Tables ─── */
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-panel);
+  text-align: left;
+  font-weight: 500;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: var(--green-dim);
+  text-transform: uppercase;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--green-faint);
+}
+td {
+  padding: 6px 12px;
+  border-bottom: 1px dotted var(--green-faint);
+  vertical-align: top;
+  white-space: nowrap;
+}
+tbody tr {
+  cursor: pointer;
+  transition: background 0.08s;
+}
+tbody tr:hover { background: rgba(0,255,102,0.05); }
+tbody tr.selected { background: rgba(0,255,102,0.10); outline: 1px solid var(--green-faint); }
+
+.side-buy { color: var(--green); }
+.side-sell { color: var(--red); }
+.tag-pass { color: var(--green); }
+.tag-block { color: var(--red); }
+.tag-paper { color: var(--amber); }
+.tag-live { color: var(--red); }
+.dim { color: var(--green-dim); }
+.tabular { font-variant-numeric: tabular-nums; }
+
+.empty {
+  padding: 30px 20px;
+  text-align: center;
+  color: var(--green-dim);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+}
+.empty .ascii {
+  font-size: 10px;
+  white-space: pre;
+  margin: 14px 0;
+  opacity: 0.6;
+}
+
+/* ─── Detail panel ─── */
+.detail {
+  padding: 14px;
+  font-size: 12px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.detail h3 {
+  margin: 0 0 8px;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  color: var(--green-dim);
+  text-transform: uppercase;
+  font-weight: 500;
+}
+.kv {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 14px;
+  font-size: 12px;
+}
+.kv .k { color: var(--green-dim); letter-spacing: 0.06em; }
+.kv .v { color: var(--green); text-align: right; font-variant-numeric: tabular-nums; }
+.cond {
+  display: grid;
+  grid-template-columns: 16px 1fr auto;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px dotted var(--green-faint);
+  align-items: baseline;
+}
+.cond .marker { font-weight: 700; }
+.cond .label { color: var(--green); }
+.cond .val { color: var(--green-dim); font-size: 11px; font-variant-numeric: tabular-nums; }
+.cond.fail .marker, .cond.fail .label { color: var(--red); }
+.cond.pass .marker, .cond.pass .label { color: var(--green); }
+
+/* ─── Footer ─── */
+footer {
+  background: var(--bg);
+  padding: 6px 14px;
+  font-size: 10px;
+  color: var(--green-dim);
+  letter-spacing: 0.12em;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* ─── Filter chips ─── */
+.chips { display: flex; gap: 6px; }
+.chip {
+  border: 1px solid var(--green-faint);
+  background: transparent;
+  color: var(--green-dim);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  padding: 3px 8px;
+  cursor: pointer;
+  text-transform: uppercase;
+}
+.chip:hover { color: var(--green); border-color: var(--green-dim); }
+.chip.active {
+  color: #000;
+  background: var(--green);
+  border-color: var(--green);
+  box-shadow: 0 0 6px var(--green-glow);
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: var(--bg-panel); }
+::-webkit-scrollbar-thumb { background: var(--green-faint); }
+::-webkit-scrollbar-thumb:hover { background: var(--green-dim); }
+</style>
+</head>
+<body>
+
+<canvas id="rain"></canvas>
+<div id="scanlines"></div>
+
+<div class="app">
+  <!-- TOP BAR -->
+  <header>
+    <div class="brand">CLAUDE&nbsp;EXECUTE<span class="sep">::</span><span class="sub">TERMINAL</span></div>
+    <div class="ticker" id="ticker">
+      <span><b id="symbol">—</b></span>
+      <span class="dim">|</span>
+      <span><b id="timeframe">—</b></span>
+      <span class="dim">|</span>
+      <span class="dim">PRICE</span> <b id="last-price">—</b>
+      <span class="dim">|</span>
+      <span class="dim">RSI(3)</span> <b id="last-rsi">—</b>
+      <span class="dim">|</span>
+      <span class="dim">EMA(8)</span> <b id="last-ema">—</b>
+      <span class="dim">|</span>
+      <span class="dim">VWAP</span> <b id="last-vwap">—</b>
+    </div>
+    <div class="status">
+      <span><span class="dot" id="mode-dot"></span><span id="mode-text">PAPER</span></span>
+      <span id="utc-clock" class="dim">--:--:-- UTC</span>
+    </div>
+  </header>
+
+  <!-- STATS STRIP -->
+  <div class="stats">
+    <div class="stat"><div class="label">Total Decisions</div><div class="val tabular" id="s-total">0</div><div class="sub">all-time</div></div>
+    <div class="stat"><div class="label">Trades Taken</div><div class="val tabular" id="s-taken">0</div><div class="sub">orders placed</div></div>
+    <div class="stat"><div class="label">Blocked</div><div class="val red tabular" id="s-blocked">0</div><div class="sub">safety check failed</div></div>
+    <div class="stat"><div class="label">Today</div><div class="val amber tabular" id="s-today">0 / 0</div><div class="sub">used / cap</div></div>
+    <div class="stat"><div class="label">Total Volume</div><div class="val tabular" id="s-volume">$0</div><div class="sub">USD executed</div></div>
+    <div class="stat"><div class="label">Est. Fees</div><div class="val tabular" id="s-fees">$0</div><div class="sub">cumulative</div></div>
+  </div>
+
+  <!-- MAIN GRID -->
+  <main>
+    <!-- EXECUTED -->
+    <section class="panel" style="grid-column: 1; grid-row: 1 / span 2;">
+      <div class="panel-head">
+        <span><span class="h">▸ EXECUTED TRADES</span></span>
+        <span class="pill" id="exec-count">0 records</span>
+      </div>
+      <div class="panel-body" id="exec-body">
+        <div class="empty">
+          <div>NO TRADES EXECUTED YET</div>
+          <pre class="ascii">  ░░░░░░░░░░░░░░░
+  AWAITING SIGNAL
+  ░░░░░░░░░░░░░░░</pre>
+          <div>Run <code>node bot.js</code> — every executed trade will appear here.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- DECISION FEED -->
+    <section class="panel" style="grid-column: 2; grid-row: 1;">
+      <div class="panel-head">
+        <span><span class="h">▸ DECISION FEED</span></span>
+        <span class="chips">
+          <button class="chip active" data-filter="all">ALL</button>
+          <button class="chip" data-filter="pass">PASS</button>
+          <button class="chip" data-filter="block">BLOCK</button>
+        </span>
+      </div>
+      <div class="panel-body" id="feed-body">
+        <div class="empty">NO DECISIONS LOGGED YET</div>
+      </div>
+    </section>
+
+    <!-- DETAIL -->
+    <section class="panel" style="grid-column: 2; grid-row: 2;">
+      <div class="panel-head">
+        <span><span class="h">▸ DECISION DETAIL</span></span>
+        <span class="pill" id="detail-ts">—</span>
+      </div>
+      <div class="panel-body" id="detail-body">
+        <div class="empty">SELECT A DECISION TO INSPECT</div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span id="status-line">▸ READY</span>
+    <span class="dim" id="last-refresh">—</span>
+  </footer>
+</div>
+
+<script>
+// ─── Matrix rain ──────────────────────────────────────────────────────────────
+(() => {
+  const canvas = document.getElementById('rain');
+  const ctx = canvas.getContext('2d');
+  let cols, drops, fontSize = 14;
+  function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    cols = Math.floor(canvas.width / fontSize);
+    drops = Array(cols).fill(0).map(() => Math.random() * -100);
+  }
+  resize();
+  window.addEventListener('resize', resize);
+  const chars = 'ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉ01ABCDEF$#%&*+-=<>'.split('');
+  function draw() {
+    ctx.fillStyle = 'rgba(0,0,0,0.10)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#00ff66';
+    ctx.font = fontSize + 'px JetBrains Mono, monospace';
+    for (let i = 0; i < drops.length; i++) {
+      const ch = chars[Math.floor(Math.random() * chars.length)];
+      ctx.fillText(ch, i * fontSize, drops[i] * fontSize);
+      if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) drops[i] = 0;
+      drops[i]++;
+    }
+    requestAnimationFrame(draw);
+  }
+  draw();
+})();
+
+// ─── Clock ────────────────────────────────────────────────────────────────────
+function tickClock() {
+  const d = new Date();
+  const t = d.toISOString().slice(11, 19);
+  document.getElementById('utc-clock').textContent = t + ' UTC';
+}
+setInterval(tickClock, 1000);
+tickClock();
+
+// ─── State ────────────────────────────────────────────────────────────────────
+const state = {
+  log: { trades: [] },
+  env: {},
+  rules: {},
+  csv: '',
+  filter: 'all',
+  selectedIdx: null,
+};
+
+const fmtNum = (n, dp = 2) => Number.isFinite(n) ? Number(n).toLocaleString(undefined, { maximumFractionDigits: dp, minimumFractionDigits: dp }) : '—';
+const fmtUSD = (n) => Number.isFinite(n) ? '$' + Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—';
+const fmtTime = (iso) => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toISOString().slice(0, 19).replace('T', ' ');
+};
+
+async function fetchAll() {
+  try {
+    const [logRes, envRes, csvRes, rulesRes] = await Promise.all([
+      fetch('/api/log').then(r => r.json()),
+      fetch('/api/env').then(r => r.json()),
+      fetch('/api/csv').then(r => r.text()),
+      fetch('/api/rules').then(r => r.json()),
+    ]);
+    state.log = logRes && logRes.trades ? logRes : { trades: [] };
+    state.env = envRes;
+    state.csv = csvRes;
+    state.rules = rulesRes;
+    render();
+    document.getElementById('status-line').textContent = '▸ CONNECTED — ' + state.log.trades.length + ' decisions on file';
+    document.getElementById('last-refresh').textContent = 'last sync: ' + new Date().toISOString().slice(11, 19) + 'Z';
+  } catch (e) {
+    document.getElementById('status-line').textContent = '▸ DISCONNECTED — ' + e.message;
+  }
+}
+
+function render() {
+  // Header ticker
+  const last = state.log.trades[state.log.trades.length - 1];
+  document.getElementById('symbol').textContent = state.env.symbol || '—';
+  document.getElementById('timeframe').textContent = state.env.timeframe || '—';
+  document.getElementById('last-price').textContent = last ? fmtUSD(last.price) : '—';
+  document.getElementById('last-rsi').textContent = last && last.indicators ? fmtNum(last.indicators.rsi3, 1) : '—';
+  document.getElementById('last-ema').textContent = last && last.indicators ? fmtUSD(last.indicators.ema8) : '—';
+  document.getElementById('last-vwap').textContent = last && last.indicators ? fmtUSD(last.indicators.vwap) : '—';
+
+  // Mode pill
+  const isPaper = state.env.paperTrading !== false;
+  const modeText = isPaper ? 'PAPER MODE' : 'LIVE MODE';
+  document.getElementById('mode-text').textContent = modeText;
+  const dot = document.getElementById('mode-dot');
+  dot.classList.toggle('amber', isPaper);
+
+  // Stats
+  const trades = state.log.trades;
+  const taken = trades.filter(t => t.orderPlaced).length;
+  const blocked = trades.filter(t => !t.allPass).length;
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const today = trades.filter(t => (t.timestamp || '').startsWith(todayKey) && t.orderPlaced).length;
+  const cap = state.env.maxTradesPerDay || 0;
+  const volume = trades.filter(t => t.orderPlaced).reduce((s, t) => s + (t.tradeSize || 0), 0);
+  const fees = volume * 0.001;
+
+  document.getElementById('s-total').textContent = trades.length;
+  document.getElementById('s-taken').textContent = taken;
+  document.getElementById('s-blocked').textContent = blocked;
+  document.getElementById('s-today').textContent = today + ' / ' + cap;
+  document.getElementById('s-volume').textContent = fmtUSD(volume);
+  document.getElementById('s-fees').textContent = fmtUSD(fees);
+
+  renderExecuted();
+  renderFeed();
+  renderDetail();
+}
+
+function renderExecuted() {
+  const body = document.getElementById('exec-body');
+  const executed = state.log.trades
+    .map((t, idx) => ({ t, idx }))
+    .filter(({ t }) => t.orderPlaced)
+    .reverse();
+
+  document.getElementById('exec-count').textContent = executed.length + ' record' + (executed.length === 1 ? '' : 's');
+
+  if (executed.length === 0) {
+    body.innerHTML = `<div class="empty"><div>NO TRADES EXECUTED YET</div>
+      <pre class="ascii">  ░░░░░░░░░░░░░░░
+  AWAITING SIGNAL
+  ░░░░░░░░░░░░░░░</pre>
+      <div>Run <code>node bot.js</code> — every executed trade will appear here.</div></div>`;
+    return;
+  }
+
+  const rows = executed.map(({ t, idx }) => {
+    const ts = fmtTime(t.timestamp);
+    const mode = t.paperTrading ? '<span class="tag-paper">PAPER</span>' : '<span class="tag-live">LIVE</span>';
+    return `<tr data-idx="${idx}">
+      <td class="dim tabular">${ts}</td>
+      <td>${t.symbol || '—'}</td>
+      <td class="side-buy">BUY</td>
+      <td class="tabular">${fmtUSD(t.price)}</td>
+      <td class="tabular">${fmtUSD(t.tradeSize)}</td>
+      <td>${mode}</td>
+      <td class="dim" style="font-size:10px">${(t.orderId || '—').slice(0, 24)}</td>
+    </tr>`;
+  }).join('');
+
+  body.innerHTML = `<table>
+    <thead><tr>
+      <th>Timestamp</th><th>Symbol</th><th>Side</th><th>Price</th><th>Size</th><th>Mode</th><th>Order ID</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+
+  body.querySelectorAll('tr[data-idx]').forEach(row => {
+    row.addEventListener('click', () => selectDecision(parseInt(row.dataset.idx, 10)));
+  });
+}
+
+function renderFeed() {
+  const body = document.getElementById('feed-body');
+  const filtered = state.log.trades
+    .map((t, idx) => ({ t, idx }))
+    .filter(({ t }) => state.filter === 'all' || (state.filter === 'pass' && t.allPass) || (state.filter === 'block' && !t.allPass))
+    .reverse();
+
+  if (filtered.length === 0) {
+    body.innerHTML = '<div class="empty">NO DECISIONS MATCH FILTER</div>';
+    return;
+  }
+
+  const rows = filtered.map(({ t, idx }) => {
+    const ts = fmtTime(t.timestamp).slice(11);
+    const tag = t.allPass
+      ? '<span class="tag-pass">PASS</span>'
+      : '<span class="tag-block">BLOCK</span>';
+    let summary;
+    if (t.allPass) {
+      summary = t.orderPlaced ? `Order placed ${fmtUSD(t.tradeSize)}` : 'All conditions met';
+    } else {
+      const failed = (t.conditions || []).filter(c => !c.pass).map(c => c.label);
+      summary = failed[0] || 'Conditions failed';
+      if (failed.length > 1) summary += ` <span class="dim">+${failed.length - 1}</span>`;
+    }
+    const sel = idx === state.selectedIdx ? 'selected' : '';
+    return `<tr class="${sel}" data-idx="${idx}">
+      <td class="dim tabular">${ts}</td>
+      <td>${tag}</td>
+      <td class="tabular">${fmtUSD(t.price)}</td>
+      <td>${summary}</td>
+    </tr>`;
+  }).join('');
+
+  body.innerHTML = `<table>
+    <thead><tr><th>Time</th><th>Result</th><th>Price</th><th>Summary</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+
+  body.querySelectorAll('tr[data-idx]').forEach(row => {
+    row.addEventListener('click', () => selectDecision(parseInt(row.dataset.idx, 10)));
+  });
+}
+
+function renderDetail() {
+  const body = document.getElementById('detail-body');
+  const tsEl = document.getElementById('detail-ts');
+  if (state.selectedIdx === null || !state.log.trades[state.selectedIdx]) {
+    tsEl.textContent = '—';
+    body.innerHTML = '<div class="empty">SELECT A DECISION TO INSPECT</div>';
+    return;
+  }
+  const t = state.log.trades[state.selectedIdx];
+  tsEl.textContent = fmtTime(t.timestamp);
+
+  const indicators = t.indicators || {};
+  const conditions = (t.conditions || []).map(c => {
+    const cls = c.pass ? 'pass' : 'fail';
+    const marker = c.pass ? '✓' : '✗';
+    const v = c.actual !== undefined ? ` <span class="val">${typeof c.actual === 'number' ? fmtNum(c.actual, 2) : c.actual}</span>` : '';
+    return `<div class="cond ${cls}">
+      <span class="marker">${marker}</span>
+      <span class="label">${c.label || '—'}</span>
+      ${v}
+    </div>`;
+  }).join('') || '<div class="dim">No conditions logged.</div>';
+
+  body.innerHTML = `
+    <div class="detail">
+      <div>
+        <h3>▸ Conditions (${t.conditions ? t.conditions.length : 0})</h3>
+        ${conditions}
+      </div>
+      <div>
+        <h3>▸ Indicators</h3>
+        <div class="kv">
+          <span class="k">Price</span><span class="v">${fmtUSD(t.price)}</span>
+          <span class="k">EMA(8)</span><span class="v">${fmtUSD(indicators.ema8)}</span>
+          <span class="k">VWAP</span><span class="v">${fmtUSD(indicators.vwap)}</span>
+          <span class="k">RSI(3)</span><span class="v">${fmtNum(indicators.rsi3, 2)}</span>
+        </div>
+
+        <h3 style="margin-top:14px">▸ Decision</h3>
+        <div class="kv">
+          <span class="k">Result</span><span class="v ${t.allPass ? 'tag-pass' : 'tag-block'}">${t.allPass ? 'PASS' : 'BLOCK'}</span>
+          <span class="k">Order</span><span class="v">${t.orderPlaced ? 'PLACED' : '—'}</span>
+          <span class="k">Mode</span><span class="v">${t.paperTrading ? 'PAPER' : 'LIVE'}</span>
+          <span class="k">Trade Size</span><span class="v">${fmtUSD(t.tradeSize)}</span>
+          <span class="k">Order ID</span><span class="v" style="font-size:11px">${(t.orderId || '—')}</span>
+          ${t.error ? `<span class="k">Error</span><span class="v" style="color:var(--red)">${t.error}</span>` : ''}
+        </div>
+
+        <h3 style="margin-top:14px">▸ Limits</h3>
+        <div class="kv">
+          <span class="k">Max trade</span><span class="v">${fmtUSD(t.limits && t.limits.maxTradeSizeUSD)}</span>
+          <span class="k">Max/day</span><span class="v">${(t.limits && t.limits.maxTradesPerDay) || '—'}</span>
+          <span class="k">Used today</span><span class="v">${(t.limits && t.limits.tradesToday) ?? '—'}</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+function selectDecision(idx) {
+  state.selectedIdx = idx;
+  renderFeed();
+  renderDetail();
+}
+
+document.querySelectorAll('.chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    state.filter = chip.dataset.filter;
+    renderFeed();
+  });
+});
+
+// initial + auto refresh
+fetchAll();
+setInterval(fetchAll, 5000);
+</script>
+</body>
+</html>
