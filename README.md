@@ -54,7 +54,7 @@ For anyone who wants to understand the steps manually, or troubleshoot a specifi
 
 ### Prerequisites
 
-- **TradingView MCP** must already be set up
+- **TradingView MCP** must already be set up — [setup walkthrough video](https://youtu.be/CrgISHUiYUw)
 - **Claude Code** installed and running
 - **An exchange account** with API access (Binance, BitGet, Bybit, OKX, Coinbase Advanced, Kraken, KuCoin, Gate.io, MEXC, or Bitfinex)
 - **Node.js 18+** — check with `node --version`

@@ -208,7 +208,7 @@ Tell the user: "Now we need TradingView connected to Claude via the MCP. This wa
 covered in the previous video — if you haven't set that up yet, watch that first
 then come back here:
 
-**Previous video:** https://youtu.be/vIX6ztULs4U
+**Setup video:** https://youtu.be/CrgISHUiYUw
 
 If you already have it set up, run `tv_health_check` in Claude Code.
 If it returns `cdp_connected: true` — you're good. Type 'connected' to continue.
