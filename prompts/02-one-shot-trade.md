@@ -34,9 +34,9 @@ Do you want to set up Wispr Flow? Type 'yes' to open it, or 'skip' to continue w
 **If they say 'yes':**
 
 Open Wispr Flow in their browser:
-- **Mac:** `open https://wisprflow.ai`
-- **Windows:** `start https://wisprflow.ai`
-- **Linux:** `xdg-open https://wisprflow.ai`
+- **Mac:** `open https://ref.wisprflow.ai/vaughan-fawcett`
+- **Windows:** `start https://ref.wisprflow.ai/vaughan-fawcett`
+- **Linux:** `xdg-open https://ref.wisprflow.ai/vaughan-fawcett`
 
 Tell them: "I've opened Wispr Flow. Download it, install it, and come back when it's
 running. Once it's set up you can speak the rest of this setup instead of typing.
@@ -95,9 +95,9 @@ Type the name or number of your exchange."
 Tell them: "Great — BitGet is the bot's default target. If you don't have a BitGet account yet, sign up here:"
 
 Open the BitGet referral link in their default browser:
-- **Mac:** `open https://www.bitget.com`
-- **Windows:** `start https://www.bitget.com`
-- **Linux:** `xdg-open https://www.bitget.com`
+- **Mac:** `open https://bonus.bitget.com/GreymatterAI`
+- **Windows:** `start https://bonus.bitget.com/GreymatterAI`
+- **Linux:** `xdg-open https://bonus.bitget.com/GreymatterAI`
 
 "I've opened BitGet for you. Create your account if you haven't already, then
 come back and type 'done'."

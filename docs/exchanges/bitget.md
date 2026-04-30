@@ -1,6 +1,6 @@
 # BitGet — API Key Setup
 
-[Sign up for BitGet](https://www.bitget.com) if you don't already have an account.
+[Sign up for BitGet](https://bonus.bitget.com/GreymatterAI) if you don't already have an account.
 
 ## What you'll get
 - API Key
