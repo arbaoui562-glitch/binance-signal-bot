@@ -194,6 +194,88 @@ function calcRSI(closes, period = 14) {
   return 100 - 100 / (1 + rs);
 }
 
+// ─── Quantitative Analysis ───────────────────────────────────────────────────
+// All figures below are statistical calculations on historical candle data —
+// not predictions, guarantees, or personalized advice. They describe what has
+// happened and what current volatility implies; they don't tell you what to do.
+
+// Average True Range — measures recent volatility per candle
+function calcATR(candles, period = 14) {
+  if (candles.length < period + 1) return null;
+  const trueRanges = [];
+  for (let i = 1; i < candles.length; i++) {
+    const { high, low } = candles[i];
+    const prevClose = candles[i - 1].close;
+    trueRanges.push(Math.max(high - low, Math.abs(high - prevClose), Math.abs(low - prevClose)));
+  }
+  const recent = trueRanges.slice(-period);
+  return recent.reduce((a, b) => a + b, 0) / recent.length;
+}
+
+// Nearest support/resistance from recent swing lows/highs (excludes the
+// current candle so the level isn't trivially equal to the live price)
+function findSupportResistance(candles, lookback = 50) {
+  const window = candles.slice(-(lookback + 1), -1);
+  if (window.length === 0) return { support: null, resistance: null };
+  const support = Math.min(...window.map((c) => c.low));
+  const resistance = Math.max(...window.map((c) => c.high));
+  return { support, resistance };
+}
+
+// Statistical price range implied by volatility (random-walk scaling: ATR * sqrt(bars))
+function projectVolatilityRange(price, atr, bars) {
+  if (!atr) return null;
+  const spread = atr * Math.sqrt(bars);
+  return { low: price - spread, high: price + spread };
+}
+
+// Trend strength — how far apart the two EMAs are, as a % of price
+function trendStrength(ema20, ema50) {
+  const gapPct = (Math.abs(ema20 - ema50) / ema50) * 100;
+  let label;
+  if (gapPct < 0.5) label = "Faible";
+  else if (gapPct < 2) label = "Modérée";
+  else label = "Forte";
+  return { gapPct, label };
+}
+
+// Historical backtest: among past candles where the SAME entry condition
+// held, what fraction of the time did price move in the expected direction
+// `lookForwardBars` later? This describes the strategy's past behavior on
+// this asset's own history — it is not a forecast of what will happen next.
+function backtestWinRate(candles, direction, lookForwardBars = 6) {
+  const closes = candles.map((c) => c.close);
+  const minIndex = 50; // need enough candles for EMA(50) to be meaningful
+  const maxIndex = closes.length - lookForwardBars - 1;
+  let matches = 0;
+  let wins = 0;
+
+  for (let i = minIndex; i < maxIndex; i++) {
+    const windowCloses = closes.slice(0, i + 1);
+    const ema20_i = calcEMA(windowCloses, 20);
+    const ema50_i = calcEMA(windowCloses, 50);
+    const rsi14_i = calcRSI(windowCloses, 14);
+    if (rsi14_i === null) continue;
+
+    const conditionMet =
+      direction === "long"
+        ? ema20_i > ema50_i && rsi14_i < 40
+        : ema20_i < ema50_i && rsi14_i > 60;
+
+    if (!conditionMet) continue;
+    matches++;
+
+    const entryPrice = closes[i];
+    const futurePrice = closes[i + lookForwardBars];
+    const wentUp = futurePrice > entryPrice;
+    if ((direction === "long" && wentUp) || (direction === "short" && !wentUp)) {
+      wins++;
+    }
+  }
+
+  return { matches, wins, winRate: matches > 0 ? (wins / matches) * 100 : null };
+}
+
 // ─── Safety Check ───────────────────────────────────────────────────────────
 
 function runSafetyCheck(price, ema20, ema50, rsi14, rules) {
@@ -565,6 +647,7 @@ async function processSymbol(symbol, rules, log) {
 
     const baseAsset = getBaseAsset(symbol);
     const quoteAsset = symbol.slice(baseAsset.length);
+    const direction = ema20 > ema50 ? "long" : "short";
 
     // Portfolio context — read-only, never places or modifies anything
     const balances = await getAccountBalances();
@@ -586,6 +669,25 @@ async function processSymbol(symbol, rules, log) {
       ? headlines.map((h) => `• ${h}`).join("\n")
       : "No recent headlines found.";
 
+    // Quantitative analysis — all derived from historical candle data, see
+    // calcATR/findSupportResistance/projectVolatilityRange/backtestWinRate
+    const atr = calcATR(candles, 14);
+    const { support, resistance } = findSupportResistance(candles, 50);
+    const range24h = projectVolatilityRange(price, atr, 6); // 6 bars * 4H = 24h
+    const range7d = projectVolatilityRange(price, atr, 42); // 42 bars * 4H = 7d
+    const strength = trendStrength(ema20, ema50);
+    const backtest = backtestWinRate(candles, direction, 6);
+
+    const quantLines =
+      `Support: $${support?.toFixed(2) ?? "N/A"} | Resistance: $${resistance?.toFixed(2) ?? "N/A"}\n` +
+      `Fourchette probable 24h (volatilité): $${range24h?.low.toFixed(2) ?? "N/A"} – $${range24h?.high.toFixed(2) ?? "N/A"}\n` +
+      `Fourchette probable 7j (volatilité): $${range7d?.low.toFixed(2) ?? "N/A"} – $${range7d?.high.toFixed(2) ?? "N/A"}\n` +
+      `Force de tendance: ${strength.label} (écart EMA ${strength.gapPct.toFixed(2)}%)\n` +
+      `Historique (même condition, ${candles.length} dernières bougies): ` +
+      (backtest.matches > 0
+        ? `${backtest.wins}/${backtest.matches} cas (${backtest.winRate.toFixed(0)}%) ont vu le prix évoluer dans le sens attendu ${6} bougies plus tard`
+        : "pas assez d'occurrences passées pour calculer un taux fiable");
+
     const message =
       `🔔 *Signal: ${symbol}* — entry conditions met\n\n` +
       `*Technical*\n` +
@@ -593,9 +695,10 @@ async function processSymbol(symbol, rules, log) {
       `EMA(20): $${ema20.toFixed(2)} | EMA(50): $${ema50.toFixed(2)}\n` +
       `RSI(14): ${rsi14.toFixed(2)}\n` +
       `Suggested size: ~$${tradeSize.toFixed(2)}\n\n` +
+      `*Analyse quantitative*\n${quantLines}\n\n` +
       `*Your portfolio*\n${portfolioLines}\n\n` +
       `*Recent headlines — ${newsQuery}*\n${newsLines}\n\n` +
-      `⚠️ _Ceci n'est pas un conseil financier. Ce message présente des données techniques, ton portefeuille et l'actualité — la décision d'achat ou de vente t'appartient entièrement. No order was placed._`;
+      `⚠️ _Ceci n'est pas un conseil financier. Ces chiffres sont des calculs statistiques sur des données passées (volatilité, historique), pas une prédiction garantie. La décision d'achat ou de vente t'appartient entièrement. No order was placed._`;
 
     try {
       await sendTelegramAlert(message);
