@@ -312,6 +312,79 @@ function buildPlainSummary({ direction, strength, price, support, resistance, ra
   return [trendPart, positionPart, rangePart, backtestPart].filter(Boolean).join(" ");
 }
 
+// ─── Outcome Tracking ────────────────────────────────────────────────────────
+// Checks past alerts against what actually happened, so the bot's own track
+// record (not just the historical backtest) can be reported.
+
+const EVAL_HORIZON_MS = 24 * 60 * 60 * 1000; // matches the 24h volatility/backtest window
+
+async function getCurrentPrice(symbol) {
+  const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`);
+  if (!res.ok) return null;
+  const data = await res.json();
+  return parseFloat(data.price);
+}
+
+// Finds alerts sent 24h+ ago that haven't been graded yet, fetches the
+// current price for each, and records whether the price moved the way the
+// signal implied. Mutates and saves the log in place.
+async function evaluateMaturedSignals(log) {
+  const now = Date.now();
+  const matured = log.trades.filter(
+    (t) => t.alertSent && !t.evaluated && now - new Date(t.timestamp).getTime() >= EVAL_HORIZON_MS,
+  );
+
+  if (matured.length === 0) return;
+
+  console.log(`\n── Grading ${matured.length} matured alert(s) ──────────────────────\n`);
+
+  const priceCache = {};
+  for (const entry of matured) {
+    if (!(entry.symbol in priceCache)) {
+      priceCache[entry.symbol] = await getCurrentPrice(entry.symbol);
+    }
+    const currentPrice = priceCache[entry.symbol];
+    if (currentPrice === null) continue;
+
+    const wentUp = currentPrice > entry.price;
+    const outcome =
+      (entry.direction === "long" && wentUp) || (entry.direction === "short" && !wentUp)
+        ? "win"
+        : "loss";
+
+    entry.evaluated = true;
+    entry.evalPrice = currentPrice;
+    entry.evalTimestamp = new Date(now).toISOString();
+    entry.outcome = outcome;
+
+    console.log(
+      `  ${entry.symbol} signal from ${entry.timestamp} → ${outcome.toUpperCase()} ` +
+        `(entry $${entry.price.toFixed(2)} → now $${currentPrice.toFixed(2)})`,
+    );
+  }
+
+  saveLog(log);
+}
+
+// Builds the bot's own historical track record for a symbol — distinct from
+// backtestWinRate, which uses candle history rather than this bot's actual alerts.
+function getTrackRecord(log, symbol, limit = 5) {
+  const evaluated = log.trades
+    .filter((t) => t.symbol === symbol && t.evaluated)
+    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+    .slice(0, limit);
+
+  if (evaluated.length === 0) {
+    return "Pas encore d'alerte évaluée pour cet actif (il faut 24h après une alerte pour la noter).";
+  }
+
+  const wins = evaluated.filter((t) => t.outcome === "win").length;
+  return (
+    `${wins}/${evaluated.length} de tes ${evaluated.length} dernières alertes sur ${symbol} ` +
+    `ont été suivies d'un mouvement dans le sens attendu, 24h plus tard.`
+  );
+}
+
 // ─── Safety Check ───────────────────────────────────────────────────────────
 
 function runSafetyCheck(price, ema20, ema50, rsi14, rules) {
@@ -664,8 +737,15 @@ async function processSymbol(symbol, rules, log) {
     indicators: { ema20, ema50, rsi14 },
     conditions: results,
     allPass,
+    direction: allPass ? (ema20 > ema50 ? "long" : "short") : null,
     tradeSize,
     alertSent: false,
+    // Outcome tracking — filled in later by evaluateMaturedSignals() once
+    // enough time has passed to check whether the price moved as expected
+    evaluated: false,
+    outcome: null,
+    evalPrice: null,
+    evalTimestamp: null,
     limits: {
       maxTradeSizeUSD: CONFIG.maxTradeSizeUSD,
       maxTradesPerDay: CONFIG.maxTradesPerDay,
@@ -734,6 +814,11 @@ async function processSymbol(symbol, rules, log) {
       backtest,
     });
 
+    // Bot's own track record — distinct from backtestWinRate (which uses
+    // candle history). This reflects what actually happened after THIS bot's
+    // own past alerts on this symbol.
+    const trackRecord = getTrackRecord(log, symbol);
+
     const message =
       `🔔 *Signal: ${symbol}* — entry conditions met\n\n` +
       `*Technical*\n` +
@@ -745,6 +830,7 @@ async function processSymbol(symbol, rules, log) {
       `*Your portfolio*\n${portfolioLines}\n\n` +
       `*Recent headlines — ${newsQuery}*\n${newsLines}\n\n` +
       `*En résumé*\n${plainSummary}\n\n` +
+      `*Bilan des alertes précédentes*\n${trackRecord}\n\n` +
       `⚠️ _Ceci n'est pas un conseil financier. Ces chiffres sont des calculs statistiques sur des données passées (volatilité, historique), pas une prédiction garantie. La décision d'achat ou de vente t'appartient entièrement. No order was placed._`;
 
     try {
@@ -773,6 +859,9 @@ async function run() {
   console.log(`  ${new Date().toISOString()}`);
   console.log(`  Mode: 🔔 SIGNAL ONLY — no orders are ever placed`);
   console.log("═══════════════════════════════════════════════════════════");
+
+  // Grade any past alerts that are now 24h+ old, before sending new ones
+  await evaluateMaturedSignals(loadLog());
 
   // Load strategy
   const rules = JSON.parse(readFileSync("rules.json", "utf8"));
