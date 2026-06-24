@@ -276,6 +276,42 @@ function backtestWinRate(candles, direction, lookForwardBars = 6) {
   return { matches, wins, winRate: matches > 0 ? (wins / matches) * 100 : null };
 }
 
+// Translates the calculations above into a plain-language paragraph.
+// This restates what the numbers show — it does not add a recommendation.
+function buildPlainSummary({ direction, strength, price, support, resistance, range7d, backtest }) {
+  const trendWord = direction === "long" ? "haussière" : "baissière";
+  const trendPart = `La tendance actuelle est ${trendWord}, et elle est jugée ${strength.label.toLowerCase()} (écart entre les deux moyennes mobiles : ${strength.gapPct.toFixed(2)}%).`;
+
+  let positionPart = "";
+  if (support !== null && resistance !== null && resistance > support) {
+    const posPct = ((price - support) / (resistance - support)) * 100;
+    if (posPct < 33) {
+      positionPart = `Le prix est actuellement proche du support ($${support.toFixed(2)}) — historiquement une zone où le prix a déjà rebondi.`;
+    } else if (posPct > 67) {
+      positionPart = `Le prix est actuellement proche de la résistance ($${resistance.toFixed(2)}) — historiquement une zone où le prix a déjà buté.`;
+    } else {
+      positionPart = `Le prix se trouve entre le support ($${support.toFixed(2)}) et la résistance ($${resistance.toFixed(2)}), sans être proche de l'un ou l'autre.`;
+    }
+  }
+
+  const rangePart = range7d
+    ? `Sur les 7 prochains jours, la volatilité récente de l'actif suggère statistiquement une fourchette de prix entre $${range7d.low.toFixed(2)} et $${range7d.high.toFixed(2)} — pas une limite garantie, juste l'amplitude habituelle des mouvements récents.`
+    : "";
+
+  let backtestPart = "Il n'y a pas assez d'occurrences passées de cette même situation pour en tirer une statistique fiable.";
+  if (backtest.matches > 0) {
+    if (backtest.winRate >= 55) {
+      backtestPart = `Par le passé, quand cette même situation s'est produite sur cet actif (${backtest.matches} fois), le prix a évolué dans le sens attendu ${backtest.winRate.toFixed(0)}% du temps — un léger biais historique en faveur de ce scénario, sans certitude pour autant.`;
+    } else if (backtest.winRate <= 45) {
+      backtestPart = `Par le passé, quand cette même situation s'est produite sur cet actif (${backtest.matches} fois), le prix a évolué dans le sens attendu seulement ${backtest.winRate.toFixed(0)}% du temps — l'historique ne soutient pas vraiment ce scénario, à interpréter avec prudence.`;
+    } else {
+      backtestPart = `Par le passé, quand cette même situation s'est produite sur cet actif (${backtest.matches} fois), le résultat a été proche du hasard (${backtest.winRate.toFixed(0)}%) — l'historique ne montre pas d'avantage clair dans un sens ou l'autre.`;
+    }
+  }
+
+  return [trendPart, positionPart, rangePart, backtestPart].filter(Boolean).join(" ");
+}
+
 // ─── Safety Check ───────────────────────────────────────────────────────────
 
 function runSafetyCheck(price, ema20, ema50, rsi14, rules) {
@@ -688,6 +724,16 @@ async function processSymbol(symbol, rules, log) {
         ? `${backtest.wins}/${backtest.matches} cas (${backtest.winRate.toFixed(0)}%) ont vu le prix évoluer dans le sens attendu ${6} bougies plus tard`
         : "pas assez d'occurrences passées pour calculer un taux fiable");
 
+    const plainSummary = buildPlainSummary({
+      direction,
+      strength,
+      price,
+      support,
+      resistance,
+      range7d,
+      backtest,
+    });
+
     const message =
       `🔔 *Signal: ${symbol}* — entry conditions met\n\n` +
       `*Technical*\n` +
@@ -698,6 +744,7 @@ async function processSymbol(symbol, rules, log) {
       `*Analyse quantitative*\n${quantLines}\n\n` +
       `*Your portfolio*\n${portfolioLines}\n\n` +
       `*Recent headlines — ${newsQuery}*\n${newsLines}\n\n` +
+      `*En résumé*\n${plainSummary}\n\n` +
       `⚠️ _Ceci n'est pas un conseil financier. Ces chiffres sont des calculs statistiques sur des données passées (volatilité, historique), pas une prédiction garantie. La décision d'achat ou de vente t'appartient entièrement. No order was placed._`;
 
     try {

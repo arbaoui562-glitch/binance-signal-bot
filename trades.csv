@@ -21,3 +21,6 @@ Date,Time (UTC),Exchange,Symbol,Side,Quantity,Price,Total USD,Fee (est.),Net Amo
 2026-06-24,21:25:47,Binance,BTCEUR,,,53490.00,,,,BLOCKED,BLOCKED,"Failed: RSI(14) above 60 (pullback in downtrend, snap-back likely)"
 2026-06-24,21:25:47,Binance,ETHEUR,,,1415.29,,,,BLOCKED,BLOCKED,"Failed: RSI(14) above 60 (pullback in downtrend, snap-back likely)"
 2026-06-24,21:25:47,Binance,SOLEUR,,,59.31,,,,BLOCKED,BLOCKED,"Failed: RSI(14) above 60 (pullback in downtrend, snap-back likely)"
+2026-06-24,21:28:51,Binance,BTCEUR,,,53497.98,,,,BLOCKED,BLOCKED,"Failed: RSI(14) above 60 (pullback in downtrend, snap-back likely)"
+2026-06-24,21:28:51,Binance,ETHEUR,,,1416.17,,,,BLOCKED,BLOCKED,"Failed: RSI(14) above 60 (pullback in downtrend, snap-back likely)"
+2026-06-24,21:28:52,Binance,SOLEUR,,,59.34,,,,BLOCKED,BLOCKED,"Failed: RSI(14) above 60 (pullback in downtrend, snap-back likely)"
