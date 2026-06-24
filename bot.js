@@ -280,6 +280,8 @@ function backtestWinRate(candles, direction, lookForwardBars = 6) {
 // This restates what the numbers show — it does not add a recommendation.
 function buildPlainSummary({ direction, strength, price, support, resistance, range7d, backtest }) {
   const trendWord = direction === "long" ? "haussière" : "baissière";
+  const signalLabel = direction === "long" ? "POSITIF (haussier)" : "NÉGATIF (baissier)";
+  const signalPart = `Signal jugé ${signalLabel}.`;
   const trendPart = `La tendance actuelle est ${trendWord}, et elle est jugée ${strength.label.toLowerCase()} (écart entre les deux moyennes mobiles : ${strength.gapPct.toFixed(2)}%).`;
 
   let positionPart = "";
@@ -309,7 +311,7 @@ function buildPlainSummary({ direction, strength, price, support, resistance, ra
     }
   }
 
-  return [trendPart, positionPart, rangePart, backtestPart].filter(Boolean).join(" ");
+  return [signalPart, trendPart, positionPart, rangePart, backtestPart].filter(Boolean).join(" ");
 }
 
 // ─── Outcome Tracking ────────────────────────────────────────────────────────
@@ -561,7 +563,7 @@ function findBalance(balances, asset) {
 
 // ─── News Headlines (Google News RSS — free, no API key) ───────────────────
 
-async function fetchNewsHeadlines(query, limit = 3) {
+async function fetchNewsHeadlines(query, limit = 15) {
   try {
     const url = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=fr&gl=FR&ceid=FR:fr`;
     const res = await fetch(url);
@@ -581,6 +583,54 @@ async function fetchNewsHeadlines(query, limit = 3) {
     console.log(`⚠️  Could not fetch news: ${err.message}`);
     return [];
   }
+}
+
+// Keyword-based thematic analysis of headline content — free, no LLM call.
+// Counts mentions per theme across the fetched headlines and reports which
+// theme(s) dominate, instead of just listing raw titles.
+const NEWS_THEMES = {
+  hausse: ["hausse", "record", "rebond", "explose", "grimpe", "bondit", "rallye", "reprise", "haussier", "monte", "gagne", "accélère"],
+  baisse: ["baisse", "chute", "recul", "crash", "plonge", "dégringole", "pression", "perd", "baissier", "liquidée", "liquidation", "décroche", "panique", "déroute"],
+  regulation: ["régulation", "sec ", "loi", "interdiction", "réglementation", "autorité", "amende", "poursuite"],
+  adoption: ["adoption", "partenariat", "intègre", "accepte", "banque", "validateur", "stablecoin", "paiement", "lance", "s'associe"],
+  risque: ["risque", "alerte", "inquiétude", "prudence", "volatilité", "instabilité"],
+};
+
+const NEWS_THEME_LABELS = {
+  hausse: "hausse",
+  baisse: "baisse",
+  regulation: "régulation",
+  adoption: "adoption / partenariats",
+  risque: "risque / prudence",
+};
+
+function summarizeNewsThemes(asset, headlines) {
+  if (headlines.length === 0) {
+    return `Aucune actualité récente trouvée pour ${asset}.`;
+  }
+
+  const counts = Object.fromEntries(Object.keys(NEWS_THEMES).map((t) => [t, 0]));
+  for (const headline of headlines) {
+    const lower = headline.toLowerCase();
+    for (const [theme, keywords] of Object.entries(NEWS_THEMES)) {
+      if (keywords.some((k) => lower.includes(k))) counts[theme]++;
+    }
+  }
+
+  const ranked = Object.entries(counts)
+    .filter(([, count]) => count > 0)
+    .sort((a, b) => b[1] - a[1]);
+
+  if (ranked.length === 0) {
+    return `${headlines.length} titres récents trouvés pour ${asset}, sans thème dominant clair détecté automatiquement parmi hausse/baisse/régulation/adoption/risque.`;
+  }
+
+  const top = ranked
+    .slice(0, 2)
+    .map(([theme, count]) => `${NEWS_THEME_LABELS[theme]} (${count} mention${count > 1 ? "s" : ""})`)
+    .join(", ");
+
+  return `Sur les ${headlines.length} derniers titres trouvés pour ${asset}, le(s) thème(s) dominant(s) sont : ${top}. (Détection automatique par mots-clés, pas une analyse de sentiment poussée.)`;
 }
 
 // ─── Tax CSV Logging ─────────────────────────────────────────────────────────
@@ -778,12 +828,10 @@ async function processSymbol(symbol, rules, log) {
         `Available to buy: ${quoteAvailable?.toFixed(2) ?? 0} ${quoteAsset}`;
     }
 
-    // News context — informational only, not a substitute for your own research
+    // News context — thematic synthesis, not a list of raw headlines
     const newsQuery = ASSET_NAMES[baseAsset] || baseAsset;
     const headlines = await fetchNewsHeadlines(`${newsQuery} crypto`);
-    const newsLines = headlines.length > 0
-      ? headlines.map((h) => `• ${h}`).join("\n")
-      : "No recent headlines found.";
+    const newsLines = summarizeNewsThemes(newsQuery, headlines);
 
     // Quantitative analysis — all derived from historical candle data, see
     // calcATR/findSupportResistance/projectVolatilityRange/backtestWinRate
@@ -828,7 +876,7 @@ async function processSymbol(symbol, rules, log) {
       `Suggested size: ~$${tradeSize.toFixed(2)}\n\n` +
       `*Analyse quantitative*\n${quantLines}\n\n` +
       `*Your portfolio*\n${portfolioLines}\n\n` +
-      `*Recent headlines — ${newsQuery}*\n${newsLines}\n\n` +
+      `*Actualités — ${newsQuery}*\n${newsLines}\n\n` +
       `*En résumé*\n${plainSummary}\n\n` +
       `*Bilan des alertes précédentes*\n${trackRecord}\n\n` +
       `⚠️ _Ceci n'est pas un conseil financier. Ces chiffres sont des calculs statistiques sur des données passées (volatilité, historique), pas une prédiction garantie. La décision d'achat ou de vente t'appartient entièrement. No order was placed._`;
