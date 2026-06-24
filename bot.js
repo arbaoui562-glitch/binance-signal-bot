@@ -15,6 +15,7 @@
 import "dotenv/config";
 import { readFileSync, writeFileSync, existsSync, appendFileSync } from "fs";
 import { execSync } from "child_process";
+import crypto from "crypto";
 
 // ─── Onboarding ───────────────────────────────────────────────────────────────
 
@@ -84,7 +85,35 @@ const CONFIG = {
     botToken: process.env.TELEGRAM_BOT_TOKEN,
     chatId: process.env.TELEGRAM_CHAT_ID,
   },
+  // Read-only Binance account access for portfolio context — these vars use the
+  // BITGET_ prefix for historical reasons but hold Binance credentials (see CLAUDE.md)
+  binance: {
+    apiKey: process.env.BITGET_API_KEY,
+    secretKey: process.env.BITGET_SECRET_KEY,
+    baseUrl: process.env.BITGET_BASE_URL || "https://api.binance.com",
+  },
 };
+
+// Maps a trading symbol to its base asset + a human-readable name for news search
+const ASSET_NAMES = {
+  BTC: "Bitcoin",
+  ETH: "Ethereum",
+  SOL: "Solana",
+  BNB: "BNB",
+  XRP: "XRP",
+  ADA: "Cardano",
+  DOGE: "Dogecoin",
+};
+
+function getBaseAsset(symbol) {
+  const quoteCurrencies = ["USDT", "USDC", "EUR", "USD", "BUSD", "BTC"];
+  for (const quote of quoteCurrencies) {
+    if (symbol.endsWith(quote) && symbol.length > quote.length) {
+      return symbol.slice(0, -quote.length);
+    }
+  }
+  return symbol;
+}
 
 const LOG_FILE = "safety-check-log.json";
 
@@ -295,6 +324,74 @@ async function sendTelegramAlert(message) {
   }
 }
 
+// ─── Portfolio Context (read-only) ──────────────────────────────────────────
+// Reads current balances so alerts can mention what you already hold.
+// This NEVER places orders or modifies the account in any way.
+
+function signBinanceQuery(queryString) {
+  return crypto
+    .createHmac("sha256", CONFIG.binance.secretKey)
+    .update(queryString)
+    .digest("hex");
+}
+
+async function getAccountBalances() {
+  if (!CONFIG.binance.apiKey || !CONFIG.binance.secretKey) {
+    console.log("⚠️  Binance API credentials not set — skipping portfolio context");
+    return null;
+  }
+
+  const params = new URLSearchParams({
+    timestamp: Date.now().toString(),
+    recvWindow: "5000",
+  });
+  params.append("signature", signBinanceQuery(params.toString()));
+
+  const res = await fetch(`${CONFIG.binance.baseUrl}/api/v3/account?${params.toString()}`, {
+    headers: { "X-MBX-APIKEY": CONFIG.binance.apiKey },
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    console.log(`⚠️  Could not read Binance account balances: ${data.msg || res.status}`);
+    return null;
+  }
+
+  return data.balances
+    .map((b) => ({ asset: b.asset, free: parseFloat(b.free), locked: parseFloat(b.locked) }))
+    .filter((b) => b.free + b.locked > 0);
+}
+
+function findBalance(balances, asset) {
+  if (!balances) return null;
+  const match = balances.find((b) => b.asset === asset);
+  return match ? match.free + match.locked : 0;
+}
+
+// ─── News Headlines (Google News RSS — free, no API key) ───────────────────
+
+async function fetchNewsHeadlines(query, limit = 3) {
+  try {
+    const url = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=fr&gl=FR&ceid=FR:fr`;
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const xml = await res.text();
+    const titles = [...xml.matchAll(/<title>(.*?)<\/title>/g)]
+      .map((m) => m[1])
+      // First <title> is always the feed/channel title (e.g. "Solana crypto - Google Actualités") — drop it
+      .slice(1)
+      // RSS uses a non-breaking space inside "Google Actualités" — normalize before comparing
+      .filter((t) => {
+        const normalized = t.replace(/ /g, " ");
+        return normalized !== "Google News" && normalized !== "Google Actualités";
+      });
+    return titles.slice(0, limit);
+  } catch (err) {
+    console.log(`⚠️  Could not fetch news: ${err.message}`);
+    return [];
+  }
+}
+
 // ─── Tax CSV Logging ─────────────────────────────────────────────────────────
 
 const CSV_FILE = "trades.csv";
@@ -464,14 +561,41 @@ async function processSymbol(symbol, rules, log) {
     console.log(`   Failed conditions:`);
     failed.forEach((f) => console.log(`   - ${f}`));
   } else {
-    console.log(`✅ ALL CONDITIONS MET — sending Telegram alert`);
+    console.log(`✅ ALL CONDITIONS MET — gathering context for alert`);
+
+    const baseAsset = getBaseAsset(symbol);
+    const quoteAsset = symbol.slice(baseAsset.length);
+
+    // Portfolio context — read-only, never places or modifies anything
+    const balances = await getAccountBalances();
+    const heldAmount = findBalance(balances, baseAsset);
+    const quoteAvailable = findBalance(balances, quoteAsset);
+
+    let portfolioLines = "Portfolio: not available (Binance API not configured)";
+    if (balances) {
+      const heldValue = heldAmount !== null ? (heldAmount * price).toFixed(2) : "0.00";
+      portfolioLines =
+        `Currently held: ${heldAmount?.toFixed(6) ?? 0} ${baseAsset} (~${heldValue} ${quoteAsset})\n` +
+        `Available to buy: ${quoteAvailable?.toFixed(2) ?? 0} ${quoteAsset}`;
+    }
+
+    // News context — informational only, not a substitute for your own research
+    const newsQuery = ASSET_NAMES[baseAsset] || baseAsset;
+    const headlines = await fetchNewsHeadlines(`${newsQuery} crypto`);
+    const newsLines = headlines.length > 0
+      ? headlines.map((h) => `• ${h}`).join("\n")
+      : "No recent headlines found.";
+
     const message =
-      `🔔 *Signal: BUY ${symbol}*\n` +
+      `🔔 *Signal: ${symbol}* — entry conditions met\n\n` +
+      `*Technical*\n` +
       `Price: $${price.toFixed(2)}\n` +
       `EMA(20): $${ema20.toFixed(2)} | EMA(50): $${ema50.toFixed(2)}\n` +
       `RSI(14): ${rsi14.toFixed(2)}\n` +
       `Suggested size: ~$${tradeSize.toFixed(2)}\n\n` +
-      `_This is a signal only — no order was placed. Review and execute manually._`;
+      `*Your portfolio*\n${portfolioLines}\n\n` +
+      `*Recent headlines — ${newsQuery}*\n${newsLines}\n\n` +
+      `⚠️ _Ceci n'est pas un conseil financier. Ce message présente des données techniques, ton portefeuille et l'actualité — la décision d'achat ou de vente t'appartient entièrement. No order was placed._`;
 
     try {
       await sendTelegramAlert(message);
